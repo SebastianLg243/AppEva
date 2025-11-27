@@ -33,6 +33,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import seba.lagos.appeva.ui.theme.AppEvaTheme
+import android.util.Log
+import com.google.firebase.database.*
+import java.net.HttpURLConnection
+import java.net.URL
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -519,8 +524,9 @@ fun ManipularCircuitoScreen(navController: NavHostController, userName: String, 
         Button(
             onClick = {
                 estado = "Activo"
+                FirebaseManager.actualizarEstadoCircuito("Activo")
             },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)), // Verde
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
             modifier = Modifier
                 .size(200.dp)
                 .padding(20.dp)
@@ -531,8 +537,9 @@ fun ManipularCircuitoScreen(navController: NavHostController, userName: String, 
         Button(
             onClick = {
                 estado = "Desactivado"
+                FirebaseManager.actualizarEstadoCircuito("Desactivado")
             },
-            colors = ButtonDefaults.buttonColors(containerColor = darkRed), // Rojo
+            colors = ButtonDefaults.buttonColors(containerColor = darkRed),
             modifier = Modifier
                 .size(200.dp)
                 .padding(20.dp)
@@ -553,7 +560,6 @@ fun ManipularCircuitoScreen(navController: NavHostController, userName: String, 
         }
     }
 }
-
 @Composable
 fun VerEstadisticasScreen(navController: NavHostController, userName: String, userType: String) {
     val data = mapOf(
@@ -596,16 +602,7 @@ fun VerEstadisticasScreen(navController: NavHostController, userName: String, us
             value = data["Desactivaciones"].toString(),
             color = Color(0xFFE53935)
         )
-        StatisticsCard(
-            label = "Obstáculos Detectados",
-            value = data["Obstáculos Detectados"].toString(),
-            color = Color(0xFFFFC107)
-        )
-        StatisticsCard(
-            label = "Distancia Total",
-            value = "${data["Distancia Total (cm)"]} cm",
-            color = Color(0xFF00B0FF)
-        )
+
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -624,14 +621,26 @@ fun VerEstadisticasScreen(navController: NavHostController, userName: String, us
 
 @Composable
 fun VerAccionesScreen(navController: NavHostController, userType: String) {
-
-    var temperatura by remember { mutableStateOf("25.7 °C") }
-    var humedad by remember { mutableStateOf("65 %") }
-    var presion by remember { mutableStateOf("1012 hPa") }
-    var ultimaActualizacion by remember { mutableStateOf("26/10/2025 - 18:40:00") }
+    var temperatura by remember { mutableStateOf("-- °C") }
+    var humedad by remember { mutableStateOf("-- %") }
+    var ultimaActualizacion by remember { mutableStateOf("--") }
 
     val accentColor = if (userType == "Administrador") Color(0xFFE53935) else Color(0xFF00B0FF)
     val darkBg = Color(0xFF1A1A1A)
+
+    LaunchedEffect(Unit) {
+        leerUltimoDatoDesdeFirebase { dato ->
+            if (dato != null) {
+                temperatura = "${dato.temperatura} °C"
+                humedad = "${dato.humedad} %"
+                ultimaActualizacion = "TS: ${dato.ts}"
+            } else {
+                temperatura = "-- °C"
+                humedad = "-- %"
+                ultimaActualizacion = "--"
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -642,63 +651,36 @@ fun VerAccionesScreen(navController: NavHostController, userType: String) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
+
         Text(
-            text = "MONITOREO ESTACIÓN METEOROLÓGICA",
+            "MONITOREO ESTACIÓN METEOROLÓGICA",
             color = Color.White,
             fontSize = 22.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(top = 40.dp, bottom = 12.dp)
+            fontWeight = FontWeight.Black
         )
-
         Text(
-            text = "Datos en tiempo real (Rol: $userType)",
+            "Datos en tiempo real (Rol: $userType)",
             color = Color.Gray,
-            fontSize = 14.sp,
-            modifier = Modifier.padding(bottom = 30.dp)
+            fontSize = 14.sp
         )
 
-        DataSensorCard(
-            label = "Temperatura",
-            value = temperatura,
-            unitColor = Color.Red,
-            icon = "🌡️"
-        )
-        DataSensorCard(
-            label = "Humedad",
-            value = humedad,
-            unitColor = Color(0xFF00B0FF),
-            icon = "💧"
-        )
-        DataSensorCard(
-            label = "Presión Atmosférica",
-            value = presion,
-            unitColor = Color(0xFF8BC34A),
-            icon = "💨"
-        )
+        // Tarjetas reales según tu Firebase
+        DataSensorCard("Temperatura", temperatura, Color.Red, "🌡️")
+        DataSensorCard("Humedad", humedad, Color(0xFF00B0FF), "💧")
 
         Spacer(modifier = Modifier.height(30.dp))
-
-        Text(
-            text = "Actualizado: $ultimaActualizacion",
-            color = Color.LightGray,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        Text("Actualizado: $ultimaActualizacion", color = Color.LightGray, fontSize = 12.sp)
 
         Spacer(modifier = Modifier.weight(1f))
-
         Button(
             onClick = { navController.popBackStack() },
             colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
+            modifier = Modifier.fillMaxWidth().height(50.dp)
         ) {
             Text("Volver al Menú", color = Color.White, fontSize = 18.sp)
         }
     }
 }
-
 @Composable
 fun VerPerfilScreen(navController: NavHostController, userName: String, userType: String) {
 
@@ -887,4 +869,79 @@ fun ProfileInfoRow(label: String, value: String, valueColor: Color = Color.White
         Text(text = label, color = Color.Gray, fontSize = 16.sp)
         Text(text = value, color = valueColor, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
+}
+
+data class DatosMeteorologicos(
+    val temperatura: Double = 0.0,
+    val humedad: Double = 0.0,
+    val ts: Long = 0
+)
+
+fun leerDatosDesdeFirebase(onDatosRecibidos: (DatosMeteorologicos?) -> Unit) {
+    val ref = FirebaseDatabase.getInstance().getReference("DatosMeteorologicos")
+    ref.limitToLast(1).addValueEventListener(object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+            var dato: DatosMeteorologicos? = null
+            for (datoSnapshot in snapshot.children) {
+                dato = datoSnapshot.getValue(DatosMeteorologicos::class.java)
+            }
+            onDatosRecibidos(dato)
+        }
+
+        override fun onCancelled(error: DatabaseError) {
+            Log.e("Firebase", "Error al leer datos: ${error.message}")
+        }
+    })
+}
+
+
+val URL_ESP32 = "http://10.58.126.190/guardar" // Cambia a la IP de tu ESP32
+
+fun enviarEstadoAlESP32(encender: Boolean) {
+    val estado = if (encender) "Activo" else "Desactivado"
+    val numero = if (encender) 1 else 0
+    val json = """
+        {
+          "estado": "$estado",
+          "numero": $numero
+        }
+    """.trimIndent()
+
+    Thread {
+        try {
+            val conn = URL(URL_ESP32).openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.outputStream.write(json.toByteArray())
+            val responseCode = conn.responseCode
+            Log.d("ESP32", "Respuesta: $responseCode")
+            conn.disconnect()
+        } catch (e: Exception) {
+            Log.e("ESP32", "Error al enviar datos: ${e.message}")
+        }
+    }.start()
+}
+
+
+fun leerUltimoDatoDesdeFirebase(onDatos: (DatosMeteorologicos?) -> Unit) {
+    val ref = FirebaseDatabase.getInstance().getReference("Datos")
+
+    ref.limitToLast(1).addListenerForSingleValueEvent(object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+            for (nodo in snapshot.children) {
+                val temp = nodo.child("temperatura").getValue(Double::class.java) ?: 0.0
+                val hum = nodo.child("humedad").getValue(Double::class.java) ?: 0.0
+                val ts = nodo.child("ts").getValue(Long::class.java) ?: 0L
+
+                onDatos(DatosMeteorologicos(temp, hum, ts))
+                return
+            }
+            onDatos(null)
+        }
+
+        override fun onCancelled(error: DatabaseError) {
+            onDatos(null)
+        }
+    })
 }

@@ -4,6 +4,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import android.util.Log
 
 object FirebaseManager {
 
@@ -62,5 +63,15 @@ object FirebaseManager {
                     callback(false, "Error", "Error de Firebase: ${error.message}")
                 }
             })
+    }
+    fun actualizarEstadoCircuito(estado: String) {
+        val ref = FirebaseDatabase.getInstance().getReference("ControlCircuito")
+        ref.child("estado").setValue(estado)
+            .addOnSuccessListener {
+                Log.d("Firebase", "Estado actualizado a: $estado")
+            }
+            .addOnFailureListener { e ->
+                Log.e("Firebase", "Error al actualizar estado: ${e.message}")
+            }
     }
 }
